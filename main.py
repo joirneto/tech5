@@ -9,23 +9,26 @@ import threading
 import tkinter as tk
 from tkinter import filedialog, messagebox
 from tkinter import ttk
-import shutil 
+import shutil
+
+# --- CONFIGURAÇÕES INICIAIS ---
 
 # Carrega o modelo YOLOv5
 modelo = torch.hub.load('ultralytics/yolov5', 'custom', path='./best.pt')
-modelo.conf = 0.5     # Confiabilidade mínima (default: 0.25)
-modelo.iou = 0.5      # IOU para NMS (default: 0.45)
+modelo.conf = 0.5  # Confiabilidade mínima
+modelo.iou = 0.5   # IOU para NMS
 # modelo.max_det = 10   # Número máximo de detecções por imagem
 
 # Configuração do e-mail
-email_user = ""  # Endereço do remetente
+email_user = "j1C6o@example.com"  # Endereço do remetente
 # Para criar seu código de app, crie em https://myaccount.google.com/apppassword
-email_cod = ""  # Código do app (senha de app do Gmail)
+email_cod = ""   # Código do app do Gmail
 
 # Variáveis globais
 opcao = ""
 
-# Função para selecionar o arquivo
+# --- FUNÇÕES PRINCIPAIS ---
+
 def selec_arquivo():
     global opcao
     caminho = filedialog.askopenfilename()
@@ -34,62 +37,50 @@ def selec_arquivo():
 
 def limpar_pasta_frames(folder='frames_detectados'):
     if os.path.exists(folder):
-        shutil.rmtree(folder)  # Apaga toda a pasta com os arquivos dentro
-    os.makedirs(folder) 
+        shutil.rmtree(folder)
+    os.makedirs(folder)
 
 def detectar(path_arquivo):
     if not path_arquivo or not os.path.exists(path_arquivo):
         print("Arquivo inválido ou inexistente.")
         return False
-    
-    limpar_pasta_frames() 
 
-    extensoes_imagem = ['.jpg', '.jpeg', '.png', '.bmp']
-    extensoes_video = ['.mp4', '.avi', '.mov', '.mkv']
+    limpar_pasta_frames()
     _, ext = os.path.splitext(path_arquivo.lower())
-
-    if ext in extensoes_imagem:
+    
+    if ext in ['.jpg', '.jpeg', '.png', '.bmp']:
         return detectar_imagem(path_arquivo)
-    elif ext in extensoes_video:
+    elif ext in ['.mp4', '.avi', '.mov', '.mkv']:
         return detectar_video(path_arquivo)
     else:
         print("Formato de arquivo não suportado.")
         return False
 
-
-# Detectar em imagem
-
 def detectar_imagem(path_img, output_folder='frames_detectados'):
-    if not os.path.exists(output_folder):
-        os.makedirs(output_folder)
-
+    os.makedirs(output_folder, exist_ok=True)
     img = cv2.imread(path_img)
     results = modelo(img)
     resultado = results.render()[0]
 
     if len(results.xywh[0]) > 0:
         filename = os.path.basename(path_img)
-        output_path = os.path.join(output_folder, f"detect_{filename}")
-        cv2.imwrite(output_path, resultado)
-        print(f"Imagem salva: {output_path}")
-        return True  # Houve detecção
+        cv2.imwrite(os.path.join(output_folder, f"detect_{filename}"), resultado)
+        print("Imagem salva com detecção.")
+        return True
     else:
-        print("Nenhum objeto detectado. Imagem não salva.")
-        return False  # Nenhuma detecção
+        print("Nenhuma detecção.")
+        return False
 
 def detectar_video(path_video, output_folder='frames_detectados'):
-    if not os.path.exists(output_folder):
-        os.makedirs(output_folder)
-
+    os.makedirs(output_folder, exist_ok=True)
     cap = cv2.VideoCapture(path_video)
-    frame_count = 0
     houve_deteccao = False
+    frame_count = 0
 
     while True:
         ret, frame = cap.read()
         if not ret:
             break
-
         img_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         results = modelo(img_rgb)
         resultado = results.render()[0]
@@ -97,10 +88,8 @@ def detectar_video(path_video, output_folder='frames_detectados'):
         if len(results.xywh[0]) > 0:
             houve_deteccao = True
             frame_count += 1
-            frame_filename = os.path.join(output_folder, f"frame_{frame_count}.jpg")
-            cv2.imwrite(frame_filename, resultado)
-            cv2.imshow("Imagem Detectada", resultado)
-
+            cv2.imwrite(os.path.join(output_folder, f"frame_{frame_count}.jpg"), resultado)
+ 
         if cv2.waitKey(1) & 0xFF == ord('q'):
             break
 
@@ -109,21 +98,17 @@ def detectar_video(path_video, output_folder='frames_detectados'):
     return houve_deteccao
 
 def enviar_email(email_send, folder_path='frames_detectados'):
-    subject = "Alerta de Detecção de Objeto"
     msg = MIMEMultipart()
     msg["From"] = email_user
     msg["To"] = email_send
-    msg["Subject"] = subject
-
-    body = "Objetos suspeitos foram detectados. Veja os anexos."
-    msg.attach(MIMEText(body, "plain"))
+    msg["Subject"] = "Alerta de Detecção de Objeto"
+    msg.attach(MIMEText("Objetos suspeitos foram detectados. Veja os anexos.", "plain"))
 
     for filename in os.listdir(folder_path):
         filepath = os.path.join(folder_path, filename)
         if filename.lower().endswith(('.png', '.jpg', '.jpeg')):
             with open(filepath, "rb") as f:
-                img = MIMEImage(f.read(), name=filename)
-                msg.attach(img)
+                msg.attach(MIMEImage(f.read(), name=filename))
 
     try:
         loading_label.config(text="Enviando email...")
@@ -136,40 +121,37 @@ def enviar_email(email_send, folder_path='frames_detectados'):
     except Exception as e:
         loading_label.config(text=f"Erro ao enviar: {e}")
 
-# Verificação e chamada da detecção e envio
+# --- FUNÇÕES DE THREADS / INTERFACE ---
 
 def thread_verificacao():
     global opcao
     email_destino = email_entry.get()
     if not email_destino:
         messagebox.showwarning("Atenção", "Por favor, insira um e-mail.")
-    elif not opcao:
+        return
+    if not opcao:
         messagebox.showwarning("Atenção", "Por favor, selecione um arquivo.")
-    else:
-        progress_bar.start()
-        loading_label.config(text="Detectando objetos...")
+        return
 
-        select_button.config(state="disabled")
-        start_button.config(state="disabled")
+    progress_bar.start()
+    loading_label.config(text="Detectando objetos...")
+    select_button.config(state="disabled")
+    start_button.config(state="disabled")
 
-        def processo_completo():
-    # Chama a detecção e checa se houve algo detectado
-            try:
-                if detectar(opcao):
-                    enviar_email(email_destino)
-                else:
-                    loading_label.config(text="Nenhuma detecção encontrada.")
-            finally:
-                # Reativa os botões ao final
-                select_button.config(state="normal")
-                start_button.config(state="normal")
-                progress_bar.stop()
-            
+    def processo_completo():
+        try:
+            if detectar(opcao):
+                enviar_email(email_destino)
+            else:
+                loading_label.config(text="Nenhuma detecção encontrada.")
+        finally:
+            select_button.config(state="normal")
+            start_button.config(state="normal")
+            progress_bar.stop()
 
-        threading.Thread(target=processo_completo).start()
+    threading.Thread(target=processo_completo).start()
 
-
-# Interface Tkinter
+# --- INTERFACE TKINTER ---
 
 root = tk.Tk()
 root.title("IA para DEVs - FIAP/ALURA")
@@ -177,8 +159,6 @@ root.configure(bg="#f4f4f4")
 
 largura_janela = 500
 altura_janela = 300
-
-# Centralizar janela
 
 def center(root):
     root.update_idletasks()
@@ -198,6 +178,7 @@ main_frame.pack(expand=True, fill="both")
 header_frame = tk.Frame(main_frame, bg="#f4f4f4")
 header_frame.pack(fill="x", pady=(0, 20))
 
+# Cabeçalho
 title_label = tk.Label(header_frame, text="Sistema de Detecção de Objetos Cortantes",
                        font=("Segoe UI", 14, "bold"), bg="#f4f4f4", fg="#2c3e50")
 title_label.pack(anchor="center")
@@ -205,6 +186,8 @@ title_label.pack(anchor="center")
 desc_label = tk.Label(header_frame, text="Selecione um arquivo e insira o e-mail para notificação.",
                       font=("Segoe UI", 10), bg="#f4f4f4", fg="#555")
 desc_label.pack(anchor="center", pady=(5, 0))
+
+# Campos de entrada
 
 tk.Label(main_frame, text="E-mail de destino:", font=label_font, bg="#f4f4f4").pack(anchor="w")
 email_entry = tk.Entry(main_frame, font=entry_font, width=40, relief="solid", bd=1)
@@ -219,7 +202,6 @@ start_button = tk.Button(main_frame, text="Iniciar Detecção", font=button_font
 start_button.pack(fill="x", pady=(10, 0))
 
 progress_bar = ttk.Progressbar(main_frame, length=200, mode="indeterminate")
-# progress_bar.pack(pady=(10, 5))
 
 loading_label = tk.Label(main_frame, text="", font=("Segoe UI", 10), bg="#f4f4f4", fg="#27ae60")
 loading_label.pack(pady=(0, 20))

@@ -18,7 +18,7 @@ modelo.iou = 0.5      # IOU para NMS (default: 0.45)
 # modelo.max_det = 10   # Número máximo de detecções por imagem
 
 # Configuração do e-mail
-email_user = "joirneto@gmail.com"  # Endereço do remetente
+email_user = ""  # Endereço do remetente
 # Para criar seu código de app, crie em https://myaccount.google.com/apppassword
 email_cod = ""  # Código do app (senha de app do Gmail)
 
